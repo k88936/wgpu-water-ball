@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
-use glam::{Mat4, Vec2, Vec3};
+use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 use winit::{
     application::ApplicationHandler,
@@ -10,6 +10,8 @@ use winit::{
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     window::{Window, WindowId},
 };
+
+const SKYBOX_WGSL: &str = include_str!("skybox.wgsl");
 
 // === Uniforms and data structs (CPU-side) ===
 
@@ -99,6 +101,7 @@ struct Pipelines {
     g2p: wgpu::ComputePipeline,
     copy_pos: wgpu::ComputePipeline,
     sphere_pipeline: wgpu::RenderPipeline,
+    skybox_pipeline: wgpu::RenderPipeline,
 }
 
 struct GpuBuffers {
@@ -117,6 +120,7 @@ struct GpuBuffers {
 struct Textures {
     depth_test_view: wgpu::TextureView, // depth32float
     depth_map_view: wgpu::TextureView,  // r32float second color att
+    cubemap_view: Option<wgpu::TextureView>,
 }
 
 struct BindGroups {
@@ -128,6 +132,7 @@ struct BindGroups {
     g2p: wgpu::BindGroup,
     copy_pos: wgpu::BindGroup,
     sphere: wgpu::BindGroup,
+    skybox: Option<wgpu::BindGroup>,
 }
 
 struct SimConfig {
@@ -430,7 +435,7 @@ impl State {
         });
         let depth_map_view = depth_map_tex.create_view(&Default::default());
 
-        // Shader modules
+    // Shader modules
         let clear_grid_mod = self.make_shader_module(CLEAR_GRID_WGSL);
         let spawn_mod = self.make_shader_module(SPAWN_WGSL);
         let p2g1_src = Self::inject_overrides(P2G1_WGSL_RAW, &[("fixed_point_multiplier", fixed_point_multiplier)]);
@@ -498,6 +503,25 @@ impl State {
             }),
             primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, ..Default::default() },
             depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: true, depth_compare: wgpu::CompareFunction::Less, stencil: Default::default(), bias: Default::default() }),
+            multisample: Default::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        // Skybox pipeline
+        let skybox_mod = self.make_shader_module(SKYBOX_WGSL);
+        let skybox_pipeline = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("skybox_pipeline"),
+            layout: None,
+            vertex: wgpu::VertexState { module: &skybox_mod, entry_point: Some("vs"), compilation_options: Default::default(), buffers: &[] },
+            fragment: Some(wgpu::FragmentState {
+                module: &skybox_mod,
+                entry_point: Some("fs"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState { format: self.surface_format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+            }),
+            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, ..Default::default() },
+            depth_stencil: None,
             multisample: Default::default(),
             multiview: None,
             cache: None,
@@ -594,8 +618,59 @@ impl State {
             ],
         });
 
+        // Attempt to load cubemap from WaterBall/public/cubemap (posx,negx,posy,negy,posz,negz)
+        let mut skybox_bg: Option<wgpu::BindGroup> = None;
+        let mut cubemap_view_opt: Option<wgpu::TextureView> = None;
+        {
+            use image::GenericImageView;
+            let faces = [
+                ("WaterBall/public/cubemap/posx.png", 0u32),
+                ("WaterBall/public/cubemap/negx.png", 1u32),
+                ("WaterBall/public/cubemap/posy.png", 2u32),
+                ("WaterBall/public/cubemap/negy.png", 3u32),
+                ("WaterBall/public/cubemap/posz.png", 4u32),
+                ("WaterBall/public/cubemap/negz.png", 5u32),
+            ];
+            if let (Ok(img0), Ok(_), Ok(_), Ok(_), Ok(_), Ok(_)) = (
+                image::open(faces[0].0), image::open(faces[1].0), image::open(faces[2].0), image::open(faces[3].0), image::open(faces[4].0), image::open(faces[5].0),
+            ) {
+                let (w, h) = img0.dimensions();
+                let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("cubemap"),
+                    size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 6 },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+                for (path, layer) in faces {
+                    if let Ok(img) = image::open(path) {
+                        let rgba = img.to_rgba8();
+                        let bytes = rgba.as_raw();
+                        let layout = wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * w), rows_per_image: Some(h) };
+                        let size = wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 };
+                        self.queue.write_texture(wgpu::TexelCopyTextureInfo { texture: &tex, mip_level: 0, origin: wgpu::Origin3d { x: 0, y: 0, z: layer }, aspect: wgpu::TextureAspect::All }, bytes, layout, size);
+                    }
+                }
+                let view = tex.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::Cube), ..Default::default() });
+                cubemap_view_opt = Some(view.clone());
+                let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor { mag_filter: wgpu::FilterMode::Linear, min_filter: wgpu::FilterMode::Linear, ..Default::default() });
+                skybox_bg = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("skyboxBG"),
+                    layout: &skybox_pipeline.get_bind_group_layout(0),
+                    entries: &[
+                        wgpu::BindGroupEntry { binding: 0, resource: render_uniform.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+                        wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&view) },
+                    ],
+                }));
+            }
+        }
+
         // Store resources
-        self.pipelines = Some(Pipelines { clear_grid, spawn, p2g1, p2g2, update_grid, g2p, copy_pos, sphere_pipeline });
+    self.pipelines = Some(Pipelines { clear_grid, spawn, p2g1, p2g2, update_grid, g2p, copy_pos, sphere_pipeline, skybox_pipeline });
         self.buffers = Some(GpuBuffers {
             particle_buffer,
             cell_buffer,
@@ -608,8 +683,8 @@ impl State {
             mouse_uniform,
             sphere_radius: sphere_radius_buf,
         });
-        self.textures = Some(Textures { depth_test_view, depth_map_view });
-        self.binds = Some(BindGroups { clear_grid: clear_grid_bg, spawn: spawn_bg, p2g1: p2g1_bg, p2g2: p2g2_bg, update_grid: update_grid_bg, g2p: g2p_bg, copy_pos: copy_pos_bg, sphere: sphere_bg });
+    self.textures = Some(Textures { depth_test_view, depth_map_view, cubemap_view: cubemap_view_opt });
+    self.binds = Some(BindGroups { clear_grid: clear_grid_bg, spawn: spawn_bg, p2g1: p2g1_bg, p2g2: p2g2_bg, update_grid: update_grid_bg, g2p: g2p_bg, copy_pos: copy_pos_bg, sphere: sphere_bg, skybox: skybox_bg });
 
         ()
     }
@@ -627,7 +702,7 @@ impl State {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("sim encoder") });
 
         // Compute pass sequence
-        if let (Some(pipes), Some(buffs), Some(binds)) = (&self.pipelines, &self.buffers, &self.binds) {
+            if let (Some(pipes), Some(_buffs), Some(binds)) = (&self.pipelines, &self.buffers, &self.binds) {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("mpm"), timestamp_writes: None });
 
             let particles = self.sim_cfg.num_particles;
@@ -675,10 +750,28 @@ impl State {
         let surface_view = surface_tex.texture.create_view(&Default::default());
 
         if let (Some(pipes), Some(textures)) = (&self.pipelines, &self.textures) {
+            // First: skybox pass if available
+            if let Some(binds) = &self.binds {
+                if let Some(sky_bg) = &binds.skybox {
+                    let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("skybox pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &surface_view, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }), store: wgpu::StoreOp::Store } })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
+                    rpass.set_pipeline(&pipes.skybox_pipeline);
+                    rpass.set_bind_group(0, sky_bg, &[]);
+                    rpass.draw(0..3, 0..1);
+                }
+            }
+
+            // Then: spheres pass; if skybox was drawn, load existing color, else clear
+            let load_color = if let Some(b) = &self.binds { b.skybox.is_some() } else { false };
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("sphere pass"),
                 color_attachments: &[
-                    Some(wgpu::RenderPassColorAttachment { view: &surface_view, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.02, g: 0.02, b: 0.03, a: 1.0 }), store: wgpu::StoreOp::Store } }),
+                    Some(wgpu::RenderPassColorAttachment { view: &surface_view, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: if load_color { wgpu::LoadOp::Load } else { wgpu::LoadOp::Clear(wgpu::Color { r: 0.02, g: 0.02, b: 0.03, a: 1.0 }) }, store: wgpu::StoreOp::Store } }),
                     Some(wgpu::RenderPassColorAttachment { view: &textures.depth_map_view, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: 1e6, g: 0.0, b: 0.0, a: 1.0 }), store: wgpu::StoreOp::Store } }),
                 ],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &textures.depth_test_view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }),
@@ -687,7 +780,6 @@ impl State {
             });
             rpass.set_pipeline(&pipes.sphere_pipeline);
             if let Some(binds) = &self.binds { rpass.set_bind_group(0, &binds.sphere, &[]); }
-            // 6 vertices per quad, instancing used per particle
             rpass.draw(0..6, 0..self.sim_cfg.num_particles);
         }
 
