@@ -1,0 +1,12 @@
+[package]
+name = "ccc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytemuck = "1.22.0"
+env_logger = "0.11"
+pollster = "0.4"
+wgpu = "26.0.0"
+tokio = { version = "1.47.1", features = ["rt", "rt-multi-thread", "macros","sync"] }
+winit = { version = "0.30.8", features = ["android-native-activity"] }
