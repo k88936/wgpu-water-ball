@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
-use glam::{Mat4, Vec2, Vec3};
+use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 use winit::{
     application::ApplicationHandler,
@@ -102,16 +102,16 @@ struct Pipelines {
 }
 
 struct GpuBuffers {
-    particle_buffer: wgpu::Buffer,     // Particle (storage)
-    cell_buffer: wgpu::Buffer,         // Grid cells (storage)
-    density_buffer: wgpu::Buffer,      // Density per particle (storage)
-    posvel_buffer: wgpu::Buffer,       // Rendered positions/velocities/density (storage)
-    render_uniform: wgpu::Buffer,      // Render uniforms
-    init_box_size: wgpu::Buffer,       // vec3f uniform
-    real_box_size: wgpu::Buffer,       // vec3f uniform
-    num_particles: wgpu::Buffer,       // u32 uniform
-    mouse_uniform: wgpu::Buffer,       // MouseInfo
-    sphere_radius: wgpu::Buffer,       // f32 uniform
+    particle_buffer: wgpu::Buffer, // Particle (storage)
+    cell_buffer: wgpu::Buffer,     // Grid cells (storage)
+    density_buffer: wgpu::Buffer,  // Density per particle (storage)
+    posvel_buffer: wgpu::Buffer,   // Rendered positions/velocities/density (storage)
+    render_uniform: wgpu::Buffer,  // Render uniforms
+    init_box_size: wgpu::Buffer,   // vec3f uniform
+    real_box_size: wgpu::Buffer,   // vec3f uniform
+    num_particles: wgpu::Buffer,   // u32 uniform
+    mouse_uniform: wgpu::Buffer,   // MouseInfo
+    sphere_radius: wgpu::Buffer,   // f32 uniform
 }
 
 struct Textures {
@@ -185,7 +185,9 @@ impl State {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-        let surface = instance.create_surface(window.clone()).expect("create surface");
+        let surface = instance
+            .create_surface(window.clone())
+            .expect("create surface");
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
@@ -252,7 +254,10 @@ impl State {
 
     fn make_shader_module(&self, code: &str) -> wgpu::ShaderModule {
         self.device
-            .create_shader_module(wgpu::ShaderModuleDescriptor { label: None, source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(code)) })
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: None,
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(code)),
+            })
     }
 
     fn inject_overrides(code: &str, overrides: &[(&str, f32)]) -> String {
@@ -289,8 +294,8 @@ impl State {
         let grid_count = (init_box_size[0].ceil() as u32)
             * (init_box_size[1].ceil() as u32)
             * (init_box_size[2].ceil() as u32);
-    self.grid_count = grid_count;
-    self.init_box_size_cpu = init_box_size;
+        self.grid_count = grid_count;
+        self.init_box_size_cpu = init_box_size;
 
         // Buffers
         let max_grid_count = (max_x * max_y * max_z) as usize;
@@ -325,44 +330,63 @@ impl State {
             mapped_at_creation: false,
         });
 
-        let init_box_size_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("init_box_size"),
-            contents: bytemuck::bytes_of(&init_box_size),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let real_box_size_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("real_box_size"),
-            contents: bytemuck::bytes_of(&real_box_size),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let num_particles_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("num_particles"),
-            contents: bytemuck::bytes_of(&(num_particles as u32)),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let init_box_size_buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("init_box_size"),
+                contents: bytemuck::bytes_of(&init_box_size),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+        let real_box_size_buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("real_box_size"),
+                contents: bytemuck::bytes_of(&real_box_size),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+        let num_particles_buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("num_particles"),
+                contents: bytemuck::bytes_of(&(num_particles as u32)),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
         let mouse_uniform = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("mouse_uniform"),
             size: std::mem::size_of::<MouseInfoUniform>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let sphere_radius_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("sphere_radius"),
-            contents: bytemuck::bytes_of(&sphere_radius),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let sphere_radius_buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("sphere_radius"),
+                contents: bytemuck::bytes_of(&sphere_radius),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
 
         // Render uniforms
         let aspect = self.size.width.max(1) as f32 / self.size.height.max(1) as f32;
         let fov = 45.0_f32.to_radians();
         let proj = Mat4::perspective_rh(fov, aspect, 0.1, 300.0);
         let view = Mat4::look_at_rh(
-            Vec3::new(init_box_size[0] * 0.5, init_box_size[1] * 0.5, init_box_size[2] * 0.5 + 70.0),
-            Vec3::new(init_box_size[0] * 0.5, init_box_size[1] * 0.5, init_box_size[2] * 0.5),
+            Vec3::new(
+                init_box_size[0] * 0.5,
+                init_box_size[1] * 0.5,
+                init_box_size[2] * 0.5 + 70.0,
+            ),
+            Vec3::new(
+                init_box_size[0] * 0.5,
+                init_box_size[1] * 0.5,
+                init_box_size[2] * 0.5,
+            ),
             Vec3::Y,
         );
         let uniforms = RenderUniforms {
-            texel_size: [1.0 / self.size.width.max(1) as f32, 1.0 / self.size.height.max(1) as f32],
+            texel_size: [
+                1.0 / self.size.width.max(1) as f32,
+                1.0 / self.size.height.max(1) as f32,
+            ],
             sphere_size: render_diameter,
             _pad0: 0.0,
             inv_projection_matrix: proj.inverse().to_cols_array_2d(),
@@ -370,16 +394,21 @@ impl State {
             view_matrix: view.to_cols_array_2d(),
             inv_view_matrix: view.inverse().to_cols_array_2d(),
         };
-        let render_uniform = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("render_uniform"),
-            contents: bytemuck::bytes_of(&uniforms),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let render_uniform = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("render_uniform"),
+                contents: bytemuck::bytes_of(&uniforms),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
 
         // Initialize particles on CPU (dam-break like)
         let mut particles: Vec<ParticleCPU> = Vec::with_capacity(num_particles as usize);
         let spacing = 0.55_f32;
-        'outer: for j in (3..((init_box_size[1] * 0.8) as i32)).map(|v| v as f32).step_by(1) {
+        'outer: for j in (3..((init_box_size[1] * 0.8) as i32))
+            .map(|v| v as f32)
+            .step_by(1)
+        {
             let mut y = j;
             while y < init_box_size[1] - 4.0 {
                 let mut i = 3.0_f32;
@@ -402,13 +431,18 @@ impl State {
             }
         }
         if !particles.is_empty() {
-            self.queue.write_buffer(&particle_buffer, 0, bytemuck::cast_slice(&particles));
+            self.queue
+                .write_buffer(&particle_buffer, 0, bytemuck::cast_slice(&particles));
         }
 
         // Textures (depth-test, depth-map second color attachment)
         let depth_test_tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("depth32float"),
-            size: wgpu::Extent3d { width: self.size.width.max(1), height: self.size.height.max(1), depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: self.size.width.max(1),
+                height: self.size.height.max(1),
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -420,7 +454,11 @@ impl State {
 
         let depth_map_tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("depthmap_r32float"),
-            size: wgpu::Extent3d { width: self.size.width.max(1), height: self.size.height.max(1), depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: self.size.width.max(1),
+                height: self.size.height.max(1),
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -433,7 +471,10 @@ impl State {
         // Shader modules
         let clear_grid_mod = self.make_shader_module(CLEAR_GRID_WGSL);
         let spawn_mod = self.make_shader_module(SPAWN_WGSL);
-        let p2g1_src = Self::inject_overrides(P2G1_WGSL_RAW, &[("fixed_point_multiplier", fixed_point_multiplier)]);
+        let p2g1_src = Self::inject_overrides(
+            P2G1_WGSL_RAW,
+            &[("fixed_point_multiplier", fixed_point_multiplier)],
+        );
         let p2g2_src = Self::inject_overrides(
             P2G2_WGSL_RAW,
             &[
@@ -446,10 +487,22 @@ impl State {
         );
         let update_grid_src = Self::inject_overrides(
             UPDATE_GRID_WGSL_RAW,
-            &[("fixed_point_multiplier", fixed_point_multiplier), ("dt", dt)],
+            &[
+                ("fixed_point_multiplier", fixed_point_multiplier),
+                ("dt", dt),
+            ],
         );
-        let g2p_src = Self::inject_overrides(G2P_WGSL_RAW, &[("fixed_point_multiplier", fixed_point_multiplier), ("dt", dt)]);
-        let mut sphere_src = Self::inject_overrides(SPHERE_WGSL_RAW, &[("restDensity", rest_density), ("densitySizeScale", 4.0)]);
+        let g2p_src = Self::inject_overrides(
+            G2P_WGSL_RAW,
+            &[
+                ("fixed_point_multiplier", fixed_point_multiplier),
+                ("dt", dt),
+            ],
+        );
+        let mut sphere_src = Self::inject_overrides(
+            SPHERE_WGSL_RAW,
+            &[("restDensity", rest_density), ("densitySizeScale", 4.0)],
+        );
         sphere_src = sphere_src.replace(
             "let size = uniforms.sphere_size * clamp(particles[instance_index].density / restDensity * densitySizeScale, 0.0, 1.0);",
             "let size = uniforms.sphere_size;",
@@ -460,18 +513,19 @@ impl State {
         let update_grid_mod = self.make_shader_module(&update_grid_src);
         let g2p_mod = self.make_shader_module(&g2p_src);
         let copy_pos_mod = self.make_shader_module(COPY_POS_WGSL);
-    let sphere_mod = self.make_shader_module(&sphere_src);
+        let sphere_mod = self.make_shader_module(&sphere_src);
 
         // Compute pipelines with constant overrides
         let make_cp = |label: &str, module: &wgpu::ShaderModule, entry: &str| {
-            self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some(label),
-                layout: None,
-                module,
-                entry_point: Some(entry),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                cache: None,
-            })
+            self.device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some(label),
+                    layout: None,
+                    module,
+                    entry_point: Some(entry),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    cache: None,
+                })
         };
 
         let clear_grid = make_cp("clearGrid", &clear_grid_mod, "clearGrid");
@@ -483,102 +537,219 @@ impl State {
         let copy_pos = make_cp("copyPosition", &copy_pos_mod, "copyPosition");
 
         // Sphere render pipeline (2 color attachments: swapchain, r32float) + depth
-        let sphere_pipeline = self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("sphere_pipeline"),
-            layout: None,
-            vertex: wgpu::VertexState { module: &sphere_mod, entry_point: Some("vs"), compilation_options: Default::default(), buffers: &[] },
-            fragment: Some(wgpu::FragmentState {
-                module: &sphere_mod,
-                entry_point: Some("fs"),
-                compilation_options: Default::default(),
-                targets: &[
-                    Some(wgpu::ColorTargetState { format: self.surface_format, blend: None, write_mask: wgpu::ColorWrites::ALL }),
-                    Some(wgpu::ColorTargetState { format: wgpu::TextureFormat::R32Float, blend: None, write_mask: wgpu::ColorWrites::RED }),
-                ],
-            }),
-            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, ..Default::default() },
-            depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: true, depth_compare: wgpu::CompareFunction::Less, stencil: Default::default(), bias: Default::default() }),
-            multisample: Default::default(),
-            multiview: None,
-            cache: None,
-        });
+        let sphere_pipeline = self
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("sphere_pipeline"),
+                layout: None,
+                vertex: wgpu::VertexState {
+                    module: &sphere_mod,
+                    entry_point: Some("vs"),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &sphere_mod,
+                    entry_point: Some("fs"),
+                    compilation_options: Default::default(),
+                    targets: &[
+                        Some(wgpu::ColorTargetState {
+                            format: self.surface_format,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        }),
+                        Some(wgpu::ColorTargetState {
+                            format: wgpu::TextureFormat::R32Float,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::RED,
+                        }),
+                    ],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: wgpu::TextureFormat::Depth32Float,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: Default::default(),
+                multiview: None,
+                cache: None,
+            });
 
         // Bind groups
         let clear_grid_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("clearGridBG"),
             layout: &clear_grid.get_bind_group_layout(0),
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: cell_buffer.as_entire_binding() }],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: cell_buffer.as_entire_binding(),
+            }],
         });
         let spawn_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("spawnBG"),
             layout: &spawn.get_bind_group_layout(0),
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: particle_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: init_box_size_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: num_particles_buf.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: particle_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: init_box_size_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: num_particles_buf.as_entire_binding(),
+                },
             ],
         });
         let p2g1_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("p2g1BG"),
             layout: &p2g1.get_bind_group_layout(0),
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: particle_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: cell_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: init_box_size_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: num_particles_buf.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: particle_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: cell_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: init_box_size_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: num_particles_buf.as_entire_binding(),
+                },
             ],
         });
         let p2g2_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("p2g2BG"),
             layout: &p2g2.get_bind_group_layout(0),
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: particle_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: cell_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: init_box_size_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: num_particles_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: density_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: particle_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: cell_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: init_box_size_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: num_particles_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: density_buffer.as_entire_binding(),
+                },
             ],
         });
         let update_grid_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("updateGridBG"),
             layout: &update_grid.get_bind_group_layout(0),
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: cell_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: real_box_size_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: init_box_size_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: render_uniform.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&depth_map_view) },
-                wgpu::BindGroupEntry { binding: 5, resource: mouse_uniform.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: cell_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: real_box_size_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: init_box_size_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: render_uniform.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&depth_map_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: mouse_uniform.as_entire_binding(),
+                },
             ],
         });
         let g2p_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("g2pBG"),
             layout: &g2p.get_bind_group_layout(0),
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: particle_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: cell_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: real_box_size_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: init_box_size_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: num_particles_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 5, resource: sphere_radius_buf.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: particle_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: cell_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: real_box_size_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: init_box_size_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: num_particles_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: sphere_radius_buf.as_entire_binding(),
+                },
             ],
         });
         let copy_pos_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("copyPosBG"),
             layout: &copy_pos.get_bind_group_layout(0),
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: particle_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: posvel_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: num_particles_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: density_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: particle_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: posvel_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: num_particles_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: density_buffer.as_entire_binding(),
+                },
             ],
         });
         let sphere_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("sphereBG"),
             layout: &sphere_pipeline.get_bind_group_layout(0),
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: posvel_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: render_uniform.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: posvel_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: render_uniform.as_entire_binding(),
+                },
                 // binding(2) stretchStrength: f32 -> supply via a tiny 4B uniform buffer set to 2.0
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -595,7 +766,16 @@ impl State {
         });
 
         // Store resources
-        self.pipelines = Some(Pipelines { clear_grid, spawn, p2g1, p2g2, update_grid, g2p, copy_pos, sphere_pipeline });
+        self.pipelines = Some(Pipelines {
+            clear_grid,
+            spawn,
+            p2g1,
+            p2g2,
+            update_grid,
+            g2p,
+            copy_pos,
+            sphere_pipeline,
+        });
         self.buffers = Some(GpuBuffers {
             particle_buffer,
             cell_buffer,
@@ -608,15 +788,28 @@ impl State {
             mouse_uniform,
             sphere_radius: sphere_radius_buf,
         });
-        self.textures = Some(Textures { depth_test_view, depth_map_view });
-        self.binds = Some(BindGroups { clear_grid: clear_grid_bg, spawn: spawn_bg, p2g1: p2g1_bg, p2g2: p2g2_bg, update_grid: update_grid_bg, g2p: g2p_bg, copy_pos: copy_pos_bg, sphere: sphere_bg });
+        self.textures = Some(Textures {
+            depth_test_view,
+            depth_map_view,
+        });
+        self.binds = Some(BindGroups {
+            clear_grid: clear_grid_bg,
+            spawn: spawn_bg,
+            p2g1: p2g1_bg,
+            p2g2: p2g2_bg,
+            update_grid: update_grid_bg,
+            g2p: g2p_bg,
+            copy_pos: copy_pos_bg,
+            sphere: sphere_bg,
+        });
 
         ()
     }
 
     fn update_mouse_uniform(&self, mouse: MouseInfoUniform) {
         if let Some(b) = &self.buffers {
-            self.queue.write_buffer(&b.mouse_uniform, 0, bytemuck::bytes_of(&mouse));
+            self.queue
+                .write_buffer(&b.mouse_uniform, 0, bytemuck::bytes_of(&mouse));
         }
     }
 
@@ -624,11 +817,18 @@ impl State {
         // Build command encoder
         let mut encoder = self
             .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("sim encoder") });
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("sim encoder"),
+            });
 
         // Compute pass sequence
-        if let (Some(pipes), Some(buffs), Some(binds)) = (&self.pipelines, &self.buffers, &self.binds) {
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("mpm"), timestamp_writes: None });
+        if let (Some(pipes), Some(buffs), Some(binds)) =
+            (&self.pipelines, &self.buffers, &self.binds)
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("mpm"),
+                timestamp_writes: None,
+            });
 
             let particles = self.sim_cfg.num_particles;
             let grids = self.grid_count;
@@ -669,7 +869,9 @@ impl State {
             Err(e) => {
                 eprintln!("Surface error: {e:?}, reconfiguring");
                 self.configure_surface();
-                self.surface.get_current_texture().expect("failed to acquire surface texture")
+                self.surface
+                    .get_current_texture()
+                    .expect("failed to acquire surface texture")
             }
         };
         let surface_view = surface_tex.texture.create_view(&Default::default());
@@ -678,15 +880,50 @@ impl State {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("sphere pass"),
                 color_attachments: &[
-                    Some(wgpu::RenderPassColorAttachment { view: &surface_view, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.02, g: 0.02, b: 0.03, a: 1.0 }), store: wgpu::StoreOp::Store } }),
-                    Some(wgpu::RenderPassColorAttachment { view: &textures.depth_map_view, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: 1e6, g: 0.0, b: 0.0, a: 1.0 }), store: wgpu::StoreOp::Store } }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &surface_view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.02,
+                                g: 0.02,
+                                b: 0.03,
+                                a: 1.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &textures.depth_map_view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 1e6,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 1.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
                 ],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &textures.depth_test_view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }),
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &textures.depth_test_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
             rpass.set_pipeline(&pipes.sphere_pipeline);
-            if let Some(binds) = &self.binds { rpass.set_bind_group(0, &binds.sphere, &[]); }
+            if let Some(binds) = &self.binds {
+                rpass.set_bind_group(0, &binds.sphere, &[]);
+            }
             // 6 vertices per quad, instancing used per particle
             rpass.draw(0..6, 0..self.sim_cfg.num_particles);
         }
@@ -705,7 +942,11 @@ impl State {
         // Recreate size-dependent textures
         let depth_test_tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("depth32float"),
-            size: wgpu::Extent3d { width: self.size.width.max(1), height: self.size.height.max(1), depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: self.size.width.max(1),
+                height: self.size.height.max(1),
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -715,7 +956,11 @@ impl State {
         });
         let depth_map_tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("depthmap_r32float"),
-            size: wgpu::Extent3d { width: self.size.width.max(1), height: self.size.height.max(1), depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: self.size.width.max(1),
+                height: self.size.height.max(1),
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -740,7 +985,10 @@ impl State {
         let cam_pos = center + Vec3::new(0.0, 0.0, 70.0);
         let view = Mat4::look_at_rh(cam_pos, center, Vec3::Y);
         let uniforms = RenderUniforms {
-            texel_size: [1.0 / self.size.width.max(1) as f32, 1.0 / self.size.height.max(1) as f32],
+            texel_size: [
+                1.0 / self.size.width.max(1) as f32,
+                1.0 / self.size.height.max(1) as f32,
+            ],
             sphere_size: self.sim_cfg.render_diameter,
             _pad0: 0.0,
             inv_projection_matrix: proj.inverse().to_cols_array_2d(),
@@ -748,10 +996,15 @@ impl State {
             view_matrix: view.to_cols_array_2d(),
             inv_view_matrix: view.inverse().to_cols_array_2d(),
         };
-    if let Some(b) = &self.buffers { self.queue.write_buffer(&b.render_uniform, 0, bytemuck::bytes_of(&uniforms)); }
+        if let Some(b) = &self.buffers {
+            self.queue
+                .write_buffer(&b.render_uniform, 0, bytemuck::bytes_of(&uniforms));
+        }
     }
 
-    fn get_window(&self) -> &Window { &self.window }
+    fn get_window(&self) -> &Window {
+        &self.window
+    }
 }
 
 #[derive(Default)]
@@ -761,14 +1014,21 @@ struct App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = Arc::new(event_loop.create_window(Window::default_attributes()).unwrap());
-    let state = pollster::block_on(State::new(window.clone()));
+        let window = Arc::new(
+            event_loop
+                .create_window(Window::default_attributes())
+                .unwrap(),
+        );
+        let state = pollster::block_on(State::new(window.clone()));
         self.state = Some(state);
         window.request_redraw();
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        let state = match self.state.as_mut() { Some(s) => s, None => return };
+        let state = match self.state.as_mut() {
+            Some(s) => s,
+            None => return,
+        };
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -778,7 +1038,13 @@ impl ApplicationHandler for App {
             }
             WindowEvent::RedrawRequested => {
                 // Update mouse uniform with no input for now
-                let mouse = MouseInfoUniform { screen_size: [state.size.width as f32, state.size.height as f32], mouse_coord: [0.5, 0.5], mouse_vel: [0.0, 0.0], mouse_radius: 6.0, _pad: 0.0 };
+                let mouse = MouseInfoUniform {
+                    screen_size: [state.size.width as f32, state.size.height as f32],
+                    mouse_coord: [0.5, 0.5],
+                    mouse_vel: [0.0, 0.0],
+                    mouse_radius: 6.0,
+                    _pad: 0.0,
+                };
                 state.update_mouse_uniform(mouse);
                 state.step_simulation();
                 state.get_window().request_redraw();
