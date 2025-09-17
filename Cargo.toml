@@ -1,5 +1,5 @@
 [package]
-name = "ccc"
+name = "wgpu-water-ball"
 version = "0.1.0"
 edition = "2024"
 
@@ -10,4 +10,4 @@ pollster = "0.4"
 wgpu = "26.0.0"
 tokio = { version = "1.47.1", features = ["rt", "rt-multi-thread", "macros","sync"] }
 winit = { version = "0.30.8", features = ["android-native-activity"] }
-glam = { version = "0.28", features = ["bytemuck"] }
+glam = { version = "0.30.5", features = ["bytemuck"] }
